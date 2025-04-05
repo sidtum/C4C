@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Cookie, Response
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Cookie, Response, Form
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from services.document_service import DocumentService
@@ -10,6 +10,12 @@ import json
 from datetime import datetime
 from pydantic import BaseModel
 import uuid
+import logging
+from fastapi.responses import FileResponse
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -35,6 +41,10 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 SESSION_DIR = "sessions"
 os.makedirs(SESSION_DIR, exist_ok=True)
 
+# Create recordings directory if it doesn't exist
+RECORDINGS_DIR = "recordings"
+os.makedirs(RECORDINGS_DIR, exist_ok=True)
+
 class QueryRequest(BaseModel):
     document_id: str
     question: str
@@ -42,6 +52,9 @@ class QueryRequest(BaseModel):
 
 class DeleteRequest(BaseModel):
     document_id: str
+
+class ConferenceStartRequest(BaseModel):
+    parent_language: str = "en"
 
 def get_session_file(session_id: str) -> str:
     return os.path.join(SESSION_DIR, f"{session_id}.json")
@@ -161,25 +174,45 @@ async def get_summary(document_id: str, language: str = "en"):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/conference/start")
-async def start_conference(language: str = "en"):
+async def start_conference(request: ConferenceStartRequest):
     try:
-        conference_id = conference_service.start_conference(language)
+        logger.info(f"Starting conference with language: {request.parent_language}")
+        conference_id = conference_service.start_conference(request.parent_language)
+        logger.info(f"Conference started with ID: {conference_id}")
         return {"conference_id": conference_id}
     except Exception as e:
+        logger.error(f"Error starting conference: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/conference/{conference_id}/audio")
-async def process_audio(conference_id: str, audio: UploadFile = File(...)):
+@app.post("/conference/record")
+async def record_audio(
+    audio: UploadFile = File(...),
+    conference_id: str = Form(...)
+):
     try:
+        logger.info(f"Received audio file: {audio.filename} for conference: {conference_id}")
+        
+        # Check if conference exists
+        if not conference_service.conference_exists(conference_id):
+            logger.error(f"Conference not found: {conference_id}")
+            raise HTTPException(status_code=404, detail=f"Conference not found: {conference_id}")
+        
         # Save the audio file
-        audio_path = os.path.join(UPLOAD_DIR, f"{conference_id}_{audio.filename}")
+        audio_path = os.path.join(RECORDINGS_DIR, f"{conference_id}_{audio.filename}")
         with open(audio_path, "wb") as buffer:
             shutil.copyfileobj(audio.file, buffer)
         
+        logger.info(f"Saved audio file to: {audio_path}")
+        
         # Process the audio
         transcript = conference_service.process_audio(conference_id, audio_path)
-        return {"transcript": transcript}
+        logger.info(f"Processed audio, transcript: {transcript[:100]}...")
+        
+        return {"text": transcript}
+    except HTTPException:
+        raise
     except Exception as e:
+        logger.error(f"Error processing audio: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         audio.file.close()
@@ -190,6 +223,44 @@ async def get_conference_summary(conference_id: str, language: str = "en"):
         summary = conference_service.get_summary(conference_id, language)
         return {"summary": summary}
     except Exception as e:
+        logger.error(f"Error getting conference summary: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/conferences/{conference_id}")
+async def delete_conference(conference_id: str):
+    try:
+        logger.info(f"Deleting conference: {conference_id}")
+        
+        # Check if conference exists
+        if not conference_service.conference_exists(conference_id):
+            logger.error(f"Conference not found: {conference_id}")
+            raise HTTPException(status_code=404, detail=f"Conference not found: {conference_id}")
+        
+        # Delete the conference
+        conference_service.delete_conference(conference_id)
+        logger.info(f"Successfully deleted conference: {conference_id}")
+        
+        return {"message": "Conference deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting conference: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/recordings/{filename}")
+async def get_recording(filename: str):
+    try:
+        file_path = os.path.join(RECORDINGS_DIR, filename)
+        
+        if not os.path.exists(file_path):
+            logger.error(f"Recording file not found: {file_path}")
+            raise HTTPException(status_code=404, detail=f"Recording file not found: {filename}")
+        
+        return FileResponse(file_path, media_type="audio/webm")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error serving recording file: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

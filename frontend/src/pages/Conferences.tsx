@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Box,
   Container,
@@ -17,6 +17,8 @@ import {
   MenuItem,
   FormControl,
   InputLabel,
+  Alert,
+  Snackbar,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import MicIcon from '@mui/icons-material/Mic';
@@ -42,6 +44,15 @@ const Conferences: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedConference, setSelectedConference] = useState<Conference | null>(null);
   const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [recordingStartTime, setRecordingStartTime] = useState<Date | null>(null);
+  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
+  const [currentlyPlaying, setCurrentlyPlaying] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  
+  // Use refs to maintain values across async operations
+  const currentConferenceIdRef = useRef<string | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   useEffect(() => {
     // Fetch conferences from backend
@@ -61,42 +72,110 @@ const Conferences: React.FC = () => {
 
   const startRecording = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const recorder = new MediaRecorder(stream);
-      const chunks: BlobPart[] = [];
+      // Reset any previous errors
+      setError(null);
+      
+      // First, start a new conference
+      const startResponse = await fetch('http://localhost:8000/conference/start', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ parent_language: selectedLanguage }),
+      });
 
+      if (!startResponse.ok) {
+        const errorData = await startResponse.json();
+        throw new Error(errorData.detail || 'Failed to start conference');
+      }
+      
+      const startData = await startResponse.json();
+      console.log("Started conference with ID:", startData.conference_id);
+      currentConferenceIdRef.current = startData.conference_id;
+
+      // Then start recording
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      });
+      
+      // Clear previous chunks
+      audioChunksRef.current = [];
+      setAudioChunks([]);
+      
       recorder.ondataavailable = (e) => {
-        chunks.push(e.data);
+        if (e.data.size > 0) {
+          audioChunksRef.current = [...audioChunksRef.current, e.data];
+          setAudioChunks(prev => [...prev, e.data]);
+        }
       };
 
       recorder.onstop = async () => {
-        const audioBlob = new Blob(chunks, { type: 'audio/wav' });
-        const formData = new FormData();
-        formData.append('audio', audioBlob);
-        formData.append('language', selectedLanguage);
-
-        setLoading(true);
         try {
-          const response = await fetch('http://localhost:8000/process-audio', {
+          const conferenceId = currentConferenceIdRef.current;
+          if (!conferenceId) {
+            throw new Error("No conference ID available");
+          }
+          
+          // Create a blob from the recorded chunks
+          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          
+          // Create a FormData object
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'recording.webm');
+          formData.append('conference_id', conferenceId);
+
+          setLoading(true);
+          
+          console.log("Sending audio to backend with conference ID:", conferenceId);
+          
+          // Send the audio to the backend
+          const response = await fetch('http://localhost:8000/conference/record', {
             method: 'POST',
             body: formData,
           });
 
-          if (!response.ok) throw new Error('Failed to process audio');
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to process audio');
+          }
+          
           const data = await response.json();
-          setConferences([data, ...conferences]);
+          console.log("Received response from backend:", data);
+          
+          // Calculate duration
+          const duration = recordingStartTime 
+            ? Math.round((new Date().getTime() - recordingStartTime.getTime()) / 1000 / 60) + ' minutes'
+            : 'Unknown duration';
+          
+          // Add the new conference to the list
+          const newConference = {
+            id: conferenceId,
+            date: new Date().toISOString(),
+            duration: duration,
+            summary: data.text || 'No summary available',
+            language: selectedLanguage,
+          };
+          
+          setConferences([newConference, ...conferences]);
         } catch (error) {
           console.error('Error processing audio:', error);
+          setError(error instanceof Error ? error.message : 'Unknown error occurred');
         } finally {
           setLoading(false);
+          currentConferenceIdRef.current = null;
+          setRecordingStartTime(null);
         }
       };
 
-      recorder.start();
+      // Start recording with 1-second intervals
+      recorder.start(1000);
       setMediaRecorder(recorder);
       setIsRecording(true);
+      setRecordingStartTime(new Date());
     } catch (error) {
       console.error('Error accessing microphone:', error);
+      setError('Failed to access microphone. Please check your permissions.');
     }
   };
 
@@ -116,13 +195,57 @@ const Conferences: React.FC = () => {
         method: 'DELETE',
       });
 
-      if (!response.ok) throw new Error('Failed to delete conference');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to delete conference');
+      }
+      
       setConferences(conferences.filter(conf => conf.id !== conferenceId));
+      setError(null);
     } catch (error) {
       console.error('Error deleting conference:', error);
+      setError(error instanceof Error ? error.message : 'Failed to delete conference');
     } finally {
       setLoading(false);
       setDeleteDialogOpen(false);
+    }
+  };
+
+  const playRecording = async (conferenceId: string) => {
+    try {
+      // If already playing this recording, stop it
+      if (currentlyPlaying === conferenceId && audioRef.current) {
+        audioRef.current.pause();
+        setCurrentlyPlaying(null);
+        return;
+      }
+      
+      // If playing a different recording, stop it first
+      if (currentlyPlaying && audioRef.current) {
+        audioRef.current.pause();
+      }
+      
+      // Create a new audio element
+      const audio = new Audio(`http://localhost:8000/recordings/${conferenceId}_recording.webm`);
+      audioRef.current = audio;
+      
+      // Set up event listeners
+      audio.onended = () => {
+        setCurrentlyPlaying(null);
+      };
+      
+      audio.onerror = (e) => {
+        console.error('Error playing audio:', e);
+        setError('Failed to play recording. The audio file may not be available.');
+        setCurrentlyPlaying(null);
+      };
+      
+      // Play the audio
+      await audio.play();
+      setCurrentlyPlaying(conferenceId);
+    } catch (error) {
+      console.error('Error playing recording:', error);
+      setError('Failed to play recording. The audio file may not be available.');
     }
   };
 
@@ -176,6 +299,12 @@ const Conferences: React.FC = () => {
           </Grid>
         </Grid>
       </Box>
+
+      {loading && (
+        <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
+          <CircularProgress />
+        </Box>
+      )}
 
       <Typography variant="h4" sx={{ mb: 4 }}>
         {t('recentConferences')}
@@ -235,10 +364,11 @@ const Conferences: React.FC = () => {
                   </Typography>
                   <Button
                     variant="outlined"
-                    startIcon={<PlayArrowIcon />}
+                    startIcon={currentlyPlaying === conference.id ? <StopIcon /> : <PlayArrowIcon />}
+                    onClick={() => playRecording(conference.id)}
                     sx={{ mt: 2 }}
                   >
-                    {t('playRecording')}
+                    {currentlyPlaying === conference.id ? t('stop') : t('playRecording')}
                   </Button>
                 </CardContent>
               </Card>
@@ -251,44 +381,35 @@ const Conferences: React.FC = () => {
         open={deleteDialogOpen}
         onClose={() => setDeleteDialogOpen(false)}
       >
-        <DialogTitle>{t('deleteConfirmation')}</DialogTitle>
+        <DialogTitle>{t('deleteConference')}</DialogTitle>
         <DialogContent>
           <Typography>
-            {t('areYouSureDelete')} {selectedConference?.date}?
+            {t('deleteConferenceConfirmation')}
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setDeleteDialogOpen(false)}>
             {t('cancel')}
           </Button>
-          <Button
-            onClick={() => handleDelete(selectedConference?.id || '')}
+          <Button 
+            onClick={() => selectedConference && handleDelete(selectedConference.id)}
             color="error"
-            variant="contained"
           >
             {t('delete')}
           </Button>
         </DialogActions>
       </Dialog>
 
-      {loading && (
-        <Box
-          sx={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: 'rgba(255, 255, 255, 0.8)',
-            zIndex: 9999,
-          }}
-        >
-          <CircularProgress />
-        </Box>
-      )}
+      <Snackbar 
+        open={!!error} 
+        autoHideDuration={6000} 
+        onClose={() => setError(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={() => setError(null)} severity="error" sx={{ width: '100%' }}>
+          {error}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 };

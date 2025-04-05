@@ -11,4 +11,6 @@ python-multipart==0.0.9
 langchain==0.1.9
 langchain-openai==0.0.5
 langchain-community==0.0.27
-chromadb==0.4.22 
+chromadb==0.4.22
+fastapi==0.110.0
+uvicorn==0.27.1 
