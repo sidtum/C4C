@@ -26,25 +26,34 @@ class DocumentService:
         )
         
     def process_document(self, file_path):
-        # Generate unique document ID
-        document_id = str(uuid.uuid4())
-        
-        # Extract text from document
-        if file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
-            text = self._extract_text_from_image(file_path)
-        else:
-            text = self._extract_text_from_pdf(file_path)
-        
-        # Split text into chunks
-        chunks = self.text_splitter.split_text(text)
-        
-        # Store chunks in vector database
-        self.vector_store.add_texts(
-            texts=chunks,
-            metadatas=[{"document_id": document_id} for _ in chunks]
-        )
-        
-        return document_id
+        try:
+            # Generate unique document ID
+            document_id = str(uuid.uuid4())
+            
+            # Extract text from document
+            if file_path.lower().endswith(('.png', '.jpg', '.jpeg')):
+                text = self._extract_text_from_image(file_path)
+            elif file_path.lower().endswith('.pdf'):
+                text = self._extract_text_from_pdf(file_path)
+            else:
+                raise ValueError(f"Unsupported file type: {file_path}")
+            
+            if not text.strip():
+                raise ValueError("No text could be extracted from the document")
+            
+            # Split text into chunks
+            chunks = self.text_splitter.split_text(text)
+            
+            # Store chunks in vector database
+            self.vector_store.add_texts(
+                texts=chunks,
+                metadatas=[{"document_id": document_id} for _ in chunks]
+            )
+            
+            return document_id
+        except Exception as e:
+            print(f"Error in process_document: {str(e)}")
+            raise
     
     def _extract_text_from_image(self, image_path):
         image = Image.open(image_path)

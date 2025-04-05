@@ -36,11 +36,15 @@ async def upload_document(file: UploadFile = File(...)):
             shutil.copyfileobj(file.file, buffer)
         
         # Process the document
-        document_id = document_service.process_document(file_path)
-        
-        return {"document_id": document_id}
+        try:
+            document_id = document_service.process_document(file_path)
+            return {"document_id": document_id}
+        except Exception as e:
+            print(f"Error processing document: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Error processing document: {str(e)}")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error uploading file: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
     finally:
         file.file.close()
 
