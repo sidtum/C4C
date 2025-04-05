@@ -33,6 +33,7 @@ interface Conference {
   duration: string;
   summary: string;
   language: string;
+  format: string;
 }
 
 const Conferences: React.FC = () => {
@@ -75,7 +76,10 @@ const Conferences: React.FC = () => {
       // Reset any previous errors
       setError(null);
       
-      // First, start a new conference
+      // First, check microphone permissions
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      
+      // If we get here, we have permission, so start the conference
       const startResponse = await fetch('http://localhost:8000/conference/start', {
         method: 'POST',
         headers: {
@@ -93,10 +97,17 @@ const Conferences: React.FC = () => {
       console.log("Started conference with ID:", startData.conference_id);
       currentConferenceIdRef.current = startData.conference_id;
 
-      // Then start recording
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      // Create the MediaRecorder with the already obtained stream
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
+        ? 'audio/webm' 
+        : MediaRecorder.isTypeSupported('audio/mp4') 
+          ? 'audio/mp4' 
+          : 'audio/ogg';
+      
+      console.log('Using MIME type for recording:', mimeType);
+      
       const recorder = new MediaRecorder(stream, {
-        mimeType: 'audio/webm;codecs=opus'
+        mimeType: mimeType
       });
       
       // Clear previous chunks
@@ -118,11 +129,11 @@ const Conferences: React.FC = () => {
           }
           
           // Create a blob from the recorded chunks
-          const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
           
           // Create a FormData object
           const formData = new FormData();
-          formData.append('audio', audioBlob, 'recording.webm');
+          formData.append('audio', audioBlob, `recording.${mimeType.split('/')[1]}`);
           formData.append('conference_id', conferenceId);
 
           setLoading(true);
@@ -155,17 +166,17 @@ const Conferences: React.FC = () => {
             duration: duration,
             summary: data.text || 'No summary available',
             language: selectedLanguage,
+            format: mimeType.split('/')[1]
           };
           
           setConferences([newConference, ...conferences]);
         } catch (error) {
           console.error('Error processing audio:', error);
           setError(error instanceof Error ? error.message : 'Unknown error occurred');
-        } finally {
-          setLoading(false);
-          currentConferenceIdRef.current = null;
-          setRecordingStartTime(null);
         }
+        setLoading(false);
+        currentConferenceIdRef.current = null;
+        setRecordingStartTime(null);
       };
 
       // Start recording with 1-second intervals
@@ -175,7 +186,17 @@ const Conferences: React.FC = () => {
       setRecordingStartTime(new Date());
     } catch (error) {
       console.error('Error accessing microphone:', error);
-      setError('Failed to access microphone. Please check your permissions.');
+      if (error instanceof Error) {
+        if (error.name === 'NotAllowedError') {
+          setError('Microphone access was denied. Please allow microphone access in your browser settings and try again.');
+        } else if (error.name === 'NotFoundError') {
+          setError('No microphone found. Please ensure you have a working microphone connected.');
+        } else {
+          setError(`Failed to access microphone: ${error.message}`);
+        }
+      } else {
+        setError('Failed to access microphone. Please check your permissions.');
+      }
     }
   };
 
@@ -225,8 +246,14 @@ const Conferences: React.FC = () => {
         audioRef.current.pause();
       }
       
-      // Create a new audio element
-      const audio = new Audio(`http://localhost:8000/recordings/${conferenceId}_recording.webm`);
+      // Find the conference to get its format
+      const conference = conferences.find(c => c.id === conferenceId);
+      if (!conference) {
+        throw new Error('Conference not found');
+      }
+      
+      // Create a new audio element with the correct format
+      const audio = new Audio(`http://localhost:8000/recordings/${conferenceId}_recording.${conference.format}`);
       audioRef.current = audio;
       
       // Set up event listeners

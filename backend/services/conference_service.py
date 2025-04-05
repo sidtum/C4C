@@ -3,7 +3,7 @@ import json
 import logging
 import subprocess
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import speech_recognition as sr
 import tempfile
 import shutil
@@ -224,4 +224,21 @@ class ConferenceService:
             logger.info(f"Successfully deleted conference {conference_id}")
         except Exception as e:
             logger.error(f"Error deleting conference: {str(e)}")
+            raise
+
+    def get_all_conferences(self) -> List[Dict]:
+        """Get all conferences."""
+        try:
+            conferences = []
+            for conference_id, conference_data in self.conferences.items():
+                conferences.append({
+                    "id": conference_id,
+                    "date": conference_data.get("start_time", ""),
+                    "duration": "Unknown",  # You might want to calculate this
+                    "summary": conference_data.get("summary", "No summary available"),
+                    "language": conference_data.get("parent_language", "en")
+                })
+            return conferences
+        except Exception as e:
+            logger.error(f"Error getting all conferences: {str(e)}")
             raise 

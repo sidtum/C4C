@@ -256,11 +256,29 @@ async def get_recording(filename: str):
             logger.error(f"Recording file not found: {file_path}")
             raise HTTPException(status_code=404, detail=f"Recording file not found: {filename}")
         
-        return FileResponse(file_path, media_type="audio/webm")
+        # Determine content type based on file extension
+        extension = filename.split('.')[-1].lower()
+        content_type = {
+            'webm': 'audio/webm',
+            'mp4': 'audio/mp4',
+            'ogg': 'audio/ogg'
+        }.get(extension, 'audio/webm')  # Default to webm if extension not recognized
+        
+        return FileResponse(file_path, media_type=content_type)
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error serving recording file: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/conferences")
+async def get_conferences():
+    try:
+        # Get all conferences from the service
+        conferences = conference_service.get_all_conferences()
+        return conferences
+    except Exception as e:
+        logger.error(f"Error getting conferences: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
