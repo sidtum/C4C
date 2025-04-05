@@ -26,6 +26,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import DeleteIcon from '@mui/icons-material/Delete';
 import EventIcon from '@mui/icons-material/Event';
+import TranslateIcon from '@mui/icons-material/Translate';
 
 interface Conference {
   id: string;
@@ -33,7 +34,8 @@ interface Conference {
   duration: string;
   summary: string;
   language: string;
-  format: string;
+  transcript?: string;
+  translatedTranscript?: string;
 }
 
 const Conferences: React.FC = () => {
@@ -49,6 +51,7 @@ const Conferences: React.FC = () => {
   const [recordingStartTime, setRecordingStartTime] = useState<Date | null>(null);
   const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [currentlyPlaying, setCurrentlyPlaying] = useState<string | null>(null);
+  const [translating, setTranslating] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   
   // Use refs to maintain values across async operations
@@ -166,7 +169,7 @@ const Conferences: React.FC = () => {
             duration: duration,
             summary: data.text || 'No summary available',
             language: selectedLanguage,
-            format: mimeType.split('/')[1]
+            transcript: data.text
           };
           
           setConferences([newConference, ...conferences]);
@@ -246,14 +249,8 @@ const Conferences: React.FC = () => {
         audioRef.current.pause();
       }
       
-      // Find the conference to get its format
-      const conference = conferences.find(c => c.id === conferenceId);
-      if (!conference) {
-        throw new Error('Conference not found');
-      }
-      
-      // Create a new audio element with the correct format
-      const audio = new Audio(`http://localhost:8000/recordings/${conferenceId}_recording.${conference.format}`);
+      // Create a new audio element
+      const audio = new Audio(`http://localhost:8000/recordings/${conferenceId}_recording.webm`);
       audioRef.current = audio;
       
       // Set up event listeners
@@ -273,6 +270,32 @@ const Conferences: React.FC = () => {
     } catch (error) {
       console.error('Error playing recording:', error);
       setError('Failed to play recording. The audio file may not be available.');
+    }
+  };
+
+  const handleTranslate = async (conferenceId: string) => {
+    try {
+      setTranslating(conferenceId);
+      const response = await fetch(`http://localhost:8000/conference/${conferenceId}/translate?target_language=${selectedLanguage}`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to translate conference');
+      }
+      
+      const data = await response.json();
+      
+      setConferences(prevConferences => 
+        prevConferences.map(conf => 
+          conf.id === conferenceId 
+            ? { ...conf, translatedTranscript: data.translated_text }
+            : conf
+        )
+      );
+    } catch (error) {
+      console.error('Error translating conference:', error);
+      setError(error instanceof Error ? error.message : 'Failed to translate conference');
+    } finally {
+      setTranslating(null);
     }
   };
 
@@ -376,27 +399,63 @@ const Conferences: React.FC = () => {
                         {t('duration')}: {conference.duration}
                       </Typography>
                     </Box>
+                  </Box>
+                  
+                  <Typography variant="body1" sx={{ mb: 2 }}>
+                    {conference.summary}
+                  </Typography>
+                  
+                  {conference.transcript && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="subtitle1" gutterBottom>
+                        {t('transcript')}:
+                      </Typography>
+                      <Typography variant="body1">
+                        {conference.transcript}
+                      </Typography>
+                    </Box>
+                  )}
+
+                  {conference.translatedTranscript && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="subtitle1" gutterBottom>
+                        {t('translatedTranscript')} ({selectedLanguage}):
+                      </Typography>
+                      <Typography variant="body1">
+                        {conference.translatedTranscript}
+                      </Typography>
+                    </Box>
+                  )}
+
+                  <Box sx={{ mt: 2, display: 'flex', gap: 1 }}>
+                    <Button
+                      variant="outlined"
+                      startIcon={currentlyPlaying === conference.id ? <StopIcon /> : <PlayArrowIcon />}
+                      onClick={() => playRecording(conference.id)}
+                      disabled={!conference.transcript}
+                    >
+                      {currentlyPlaying === conference.id ? t('stop') : t('playRecording')}
+                    </Button>
+                    
+                    <Button
+                      variant="outlined"
+                      startIcon={<TranslateIcon />}
+                      onClick={() => handleTranslate(conference.id)}
+                      disabled={translating === conference.id || !conference.transcript}
+                    >
+                      {translating === conference.id ? t('translating') : t('translate')}
+                    </Button>
+                    
                     <IconButton
+                      color="error"
                       onClick={() => {
                         setSelectedConference(conference);
                         setDeleteDialogOpen(true);
                       }}
-                      sx={{ color: 'error.main' }}
                     >
                       <DeleteIcon />
                     </IconButton>
                   </Box>
-                  <Typography variant="body1" sx={{ mb: 2 }}>
-                    {conference.summary}
-                  </Typography>
-                  <Button
-                    variant="outlined"
-                    startIcon={currentlyPlaying === conference.id ? <StopIcon /> : <PlayArrowIcon />}
-                    onClick={() => playRecording(conference.id)}
-                    sx={{ mt: 2 }}
-                  >
-                    {currentlyPlaying === conference.id ? t('stop') : t('playRecording')}
-                  </Button>
                 </CardContent>
               </Card>
             </Grid>

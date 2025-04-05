@@ -13,4 +13,5 @@ langchain-openai==0.0.5
 langchain-community==0.0.27
 chromadb==0.4.22
 fastapi==0.110.0
-uvicorn==0.27.1 
+uvicorn==0.27.1
+deep-translator==1.11.4 

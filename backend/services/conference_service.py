@@ -7,6 +7,7 @@ from typing import Dict, Optional, List
 import speech_recognition as sr
 import tempfile
 import shutil
+from deep_translator import GoogleTranslator
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -242,3 +243,31 @@ class ConferenceService:
         except Exception as e:
             logger.error(f"Error getting all conferences: {str(e)}")
             raise 
+
+    def translate_conference(self, conference_id: str, target_language: str) -> str:
+        """Translate the conference transcript to the target language."""
+        try:
+            if not self.conference_exists(conference_id):
+                raise ValueError(f"Conference {conference_id} not found")
+            
+            conference = self.conferences[conference_id]
+            
+            # Combine all transcripts
+            full_text = " ".join(t["text"] for t in conference["transcripts"])
+            
+            # Use Google Translate via deep-translator
+            try:
+                # Create a translator instance
+                translator = GoogleTranslator(source='auto', target=target_language)
+                
+                # Translate the text
+                translated_text = translator.translate(full_text)
+                logger.info(f"Successfully translated text to {target_language}")
+                return translated_text
+            except Exception as e:
+                logger.error(f"Translation service error: {str(e)}")
+                return f"Error with translation service: {str(e)}"
+                
+        except Exception as e:
+            logger.error(f"Error translating conference: {str(e)}")
+            raise

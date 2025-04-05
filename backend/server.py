@@ -281,6 +281,19 @@ async def get_conferences():
         logger.error(f"Error getting conferences: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/conference/{conference_id}/translate")
+async def translate_conference(conference_id: str, target_language: str = "en"):
+    try:
+        if not conference_service.conference_exists(conference_id):
+            logger.error(f"Conference not found: {conference_id}")
+            raise HTTPException(status_code=404, detail=f"Conference not found: {conference_id}")
+        
+        translated_text = conference_service.translate_conference(conference_id, target_language)
+        return {"translated_text": translated_text}
+    except Exception as e:
+        logger.error(f"Error translating conference: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000) 
