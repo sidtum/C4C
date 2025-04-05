@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   Container,
@@ -94,13 +94,15 @@ const Chat: React.FC = () => {
     fetchData();
   }, [activeTab]);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  const scrollToBottom = useCallback(() => {
+    if (messages.length > 0) {  // Only scroll if there are messages
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages.length]);
 
   useEffect(() => {
     scrollToBottom();
-  }, [messages]);
+  }, [scrollToBottom]);
 
   const handleSend = async () => {
     if (!input.trim()) return;
