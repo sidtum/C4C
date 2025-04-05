@@ -382,6 +382,11 @@ class ConferenceService:
                     try:
                         # Get the first and last transcript timestamps
                         first_time = datetime.fromisoformat(conference_data["transcripts"][0]["timestamp"])
+                        
+                        # If there's only one transcript, use the start_time as the first time
+                        if len(conference_data["transcripts"]) == 1:
+                            first_time = datetime.fromisoformat(conference_data["start_time"])
+                            
                         last_time = datetime.fromisoformat(conference_data["transcripts"][-1]["timestamp"])
                         duration_seconds = (last_time - first_time).total_seconds()
                         
