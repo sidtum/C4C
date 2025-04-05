@@ -56,6 +56,11 @@ class DeleteRequest(BaseModel):
 class ConferenceStartRequest(BaseModel):
     parent_language: str = "en"
 
+class ConferenceQueryRequest(BaseModel):
+    conference_id: str
+    question: str
+    language: str = "en"
+
 def get_session_file(session_id: str) -> str:
     return os.path.join(SESSION_DIR, f"{session_id}.json")
 
@@ -226,23 +231,24 @@ async def get_conference_summary(conference_id: str, language: str = "en"):
         logger.error(f"Error getting conference summary: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/conferences")
+async def get_conferences():
+    """Get all conferences."""
+    try:
+        conferences = conference_service.get_all_conferences()
+        return conferences
+    except Exception as e:
+        logger.error(f"Error getting conferences: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.delete("/conferences/{conference_id}")
 async def delete_conference(conference_id: str):
+    """Delete a conference and its associated files."""
     try:
-        logger.info(f"Deleting conference: {conference_id}")
-        
-        # Check if conference exists
-        if not conference_service.conference_exists(conference_id):
-            logger.error(f"Conference not found: {conference_id}")
-            raise HTTPException(status_code=404, detail=f"Conference not found: {conference_id}")
-        
-        # Delete the conference
         conference_service.delete_conference(conference_id)
-        logger.info(f"Successfully deleted conference: {conference_id}")
-        
         return {"message": "Conference deleted successfully"}
-    except HTTPException:
-        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         logger.error(f"Error deleting conference: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -271,16 +277,6 @@ async def get_recording(filename: str):
         logger.error(f"Error serving recording file: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/conferences")
-async def get_conferences():
-    try:
-        # Get all conferences from the service
-        conferences = conference_service.get_all_conferences()
-        return conferences
-    except Exception as e:
-        logger.error(f"Error getting conferences: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/conference/{conference_id}/translate")
 async def translate_conference(conference_id: str, target_language: str = "en"):
     try:
@@ -292,6 +288,22 @@ async def translate_conference(conference_id: str, target_language: str = "en"):
         return {"translated_text": translated_text}
     except Exception as e:
         logger.error(f"Error translating conference: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/conference/query")
+async def query_conference(request: ConferenceQueryRequest):
+    """Query a conference transcript using RAG."""
+    try:
+        if not conference_service.conference_exists(request.conference_id):
+            raise HTTPException(status_code=404, detail="Conference not found")
+        
+        answer = conference_service.query_conference(
+            request.conference_id,
+            request.question,
+            request.language
+        )
+        return {"answer": answer}
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
