@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Container,
@@ -26,6 +26,24 @@ const Documents: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
 
+  useEffect(() => {
+    // Fetch documents when component mounts
+    const fetchDocuments = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/documents', {
+          credentials: 'include', // Include cookies in the request
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setDocuments(data);
+        }
+      } catch (error) {
+        console.error('Error fetching documents:', error);
+      }
+    };
+    fetchDocuments();
+  }, []);
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -38,6 +56,7 @@ const Documents: React.FC = () => {
       const response = await fetch('http://localhost:8000/upload', {
         method: 'POST',
         body: formData,
+        credentials: 'include', // Include cookies in the request
       });
 
       if (!response.ok) throw new Error('Upload failed');
@@ -54,7 +73,16 @@ const Documents: React.FC = () => {
   const handleDelete = async (documentId: string) => {
     setLoading(true);
     try {
-      // Implement delete functionality
+      const response = await fetch(`http://localhost:8000/documents/${documentId}`, {
+        method: 'DELETE',
+        credentials: 'include', // Include cookies in the request
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete document');
+      }
+
+      // Update the documents list
       setDocuments(documents.filter(doc => doc.id !== documentId));
     } catch (error) {
       console.error('Error deleting document:', error);

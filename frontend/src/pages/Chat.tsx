@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 import SendIcon from '@mui/icons-material/Send';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
 import LanguageIcon from '@mui/icons-material/Language';
+import DescriptionIcon from '@mui/icons-material/Description';
 
 interface Message {
   id: string;
@@ -26,13 +27,38 @@ interface Message {
   timestamp: string;
 }
 
+interface Document {
+  id: string;
+  name: string;
+}
+
 const Chat: React.FC = () => {
   const { t } = useTranslation();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [selectedLanguage, setSelectedLanguage] = useState('en');
+  const [selectedDocument, setSelectedDocument] = useState<string>('');
+  const [documents, setDocuments] = useState<Document[]>([]);
   const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    // Fetch documents when component mounts
+    const fetchDocuments = async () => {
+      try {
+        const response = await fetch('http://localhost:8000/documents', {
+          credentials: 'include', // Include cookies in the request
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setDocuments(data);
+        }
+      } catch (error) {
+        console.error('Error fetching documents:', error);
+      }
+    };
+    fetchDocuments();
+  }, []);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -43,7 +69,7 @@ const Chat: React.FC = () => {
   }, [messages]);
 
   const handleSend = async () => {
-    if (!input.trim()) return;
+    if (!input.trim() || !selectedDocument) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -57,23 +83,27 @@ const Chat: React.FC = () => {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/chat', {
+      const response = await fetch('http://localhost:8000/query', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          message: input,
+          document_id: selectedDocument,
+          question: input,
           language: selectedLanguage,
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to get response');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to get response');
+      }
 
       const data = await response.json();
       const assistantMessage: Message = {
         id: Date.now().toString(),
-        text: data.response,
+        text: data.answer,
         sender: 'assistant',
         timestamp: new Date().toISOString(),
       };
@@ -81,6 +111,13 @@ const Chat: React.FC = () => {
       setMessages((prevMessages) => [...prevMessages, assistantMessage]);
     } catch (error) {
       console.error('Error sending message:', error);
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        text: error instanceof Error ? error.message : t('errorSendingMessage'),
+        sender: 'assistant',
+        timestamp: new Date().toISOString(),
+      };
+      setMessages((prevMessages) => [...prevMessages, errorMessage]);
     } finally {
       setLoading(false);
     }
@@ -197,7 +234,29 @@ const Chat: React.FC = () => {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} sm={9}>
+            <Grid item xs={12} sm={3}>
+              <FormControl fullWidth>
+                <InputLabel>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <DescriptionIcon fontSize="small" />
+                    {t('document')}
+                  </Box>
+                </InputLabel>
+                <Select
+                  value={selectedDocument}
+                  onChange={(e) => setSelectedDocument(e.target.value)}
+                  label={t('document')}
+                >
+                  <MenuItem value="">{t('selectDocument')}</MenuItem>
+                  {documents.map((doc) => (
+                    <MenuItem key={doc.id} value={doc.id}>
+                      {doc.name}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
               <Box sx={{ display: 'flex', gap: 1 }}>
                 <TextField
                   fullWidth
@@ -207,7 +266,7 @@ const Chat: React.FC = () => {
                   onChange={(e) => setInput(e.target.value)}
                   onKeyPress={handleKeyPress}
                   placeholder={t('typeMessage')}
-                  disabled={loading}
+                  disabled={loading || !selectedDocument}
                   sx={{
                     '& .MuiOutlinedInput-root': {
                       borderRadius: 2,
@@ -217,7 +276,7 @@ const Chat: React.FC = () => {
                 <Button
                   variant="contained"
                   onClick={handleSend}
-                  disabled={loading || !input.trim()}
+                  disabled={loading || !input.trim() || !selectedDocument}
                   sx={{
                     minWidth: 'auto',
                     px: 3,

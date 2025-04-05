@@ -23,8 +23,13 @@ class RAGService:
         )
         
         self.prompt_template = """You are a helpful assistant that helps parents understand their child's academic progress.
-        Use the following pieces of context to answer the question in the specified language.
-        If you don't know the answer, just say that you don't know, don't try to make up an answer.
+        You will be given a question and some context from the student's academic documents.
+        Your task is to:
+        1. Analyze the context to find relevant information
+        2. Answer the question based on the context
+        3. Provide the answer in the specified language ({language})
+        
+        If you don't know the answer based on the context, just say that you don't know, don't try to make up an answer.
         
         Context: {context}
         
@@ -39,29 +44,36 @@ class RAGService:
         )
     
     def query_document(self, document_id, question, language):
-        # Create retriever with improved search parameters
+        # Create retriever with appropriate search parameters
         retriever = self.vector_store.as_retriever(
             search_kwargs={
                 "filter": {"document_id": document_id},
-                "k": 5,  # Number of relevant chunks to retrieve
-                "score_threshold": 0.7  # Minimum similarity score
+                "k": 5  # Number of relevant chunks to retrieve
             }
         )
         
-        # Create QA chain with improved configuration
-        qa_chain = RetrievalQA.from_chain_type(
-            llm=self.llm,
-            chain_type="stuff",
-            retriever=retriever,
-            chain_type_kwargs={
-                "prompt": self.prompt,
-                "verbose": True
-            }
-        )
+        # Create a custom chain that includes the language parameter
+        def custom_chain(inputs):
+            # Get relevant documents
+            docs = retriever.get_relevant_documents(inputs["query"])
+            context = "\n".join([doc.page_content for doc in docs])
+            
+            # Format the prompt with all required variables
+            formatted_prompt = self.prompt.format(
+                context=context,
+                question=inputs["query"],
+                language=language
+            )
+            
+            # Get the answer from the LLM
+            response = self.llm.invoke(formatted_prompt)
+            return {"result": response.content}
         
         # Get answer with error handling
         try:
-            result = qa_chain({"query": question, "language": language})
+            result = custom_chain({
+                "query": question
+            })
             return result["result"]
         except Exception as e:
             return f"Error processing your question: {str(e)}"

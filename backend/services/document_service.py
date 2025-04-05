@@ -55,6 +55,25 @@ class DocumentService:
             print(f"Error in process_document: {str(e)}")
             raise
     
+    def delete_document(self, document_id):
+        try:
+            # Delete all chunks associated with the document from the vector store
+            self.vector_store.delete(
+                where={"document_id": document_id}
+            )
+            
+            # Delete the uploaded file if it exists
+            for filename in os.listdir("uploads"):
+                if filename.startswith(document_id):
+                    file_path = os.path.join("uploads", filename)
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+            
+            return True
+        except Exception as e:
+            print(f"Error in delete_document: {str(e)}")
+            raise
+    
     def _extract_text_from_image(self, image_path):
         image = Image.open(image_path)
         text = pytesseract.image_to_string(image)

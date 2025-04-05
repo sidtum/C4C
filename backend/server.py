@@ -1,11 +1,15 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Body, Cookie, Response
 from fastapi.middleware.cors import CORSMiddleware
 import os
 from services.document_service import DocumentService
 from services.rag_service import RAGService
 from services.conference_service import ConferenceService
 import shutil
-from typing import List
+from typing import List, Optional
+import json
+from datetime import datetime
+from pydantic import BaseModel
+import uuid
 
 app = FastAPI()
 
@@ -27,9 +31,52 @@ conference_service = ConferenceService()
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-@app.post("/upload")
-async def upload_document(file: UploadFile = File(...)):
+# Create a directory for session data
+SESSION_DIR = "sessions"
+os.makedirs(SESSION_DIR, exist_ok=True)
+
+class QueryRequest(BaseModel):
+    document_id: str
+    question: str
+    language: str = "en"
+
+class DeleteRequest(BaseModel):
+    document_id: str
+
+def get_session_file(session_id: str) -> str:
+    return os.path.join(SESSION_DIR, f"{session_id}.json")
+
+@app.get("/documents")
+async def get_documents(session_id: Optional[str] = Cookie(None)):
     try:
+        if not session_id:
+            # Create a new session
+            session_id = str(uuid.uuid4())
+            documents = []
+        else:
+            # Load existing session
+            session_file = get_session_file(session_id)
+            if os.path.exists(session_file):
+                with open(session_file, "r") as f:
+                    documents = json.load(f)
+            else:
+                documents = []
+        
+        return documents
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    session_id: Optional[str] = Cookie(None),
+    response: Response = None
+):
+    try:
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            response.set_cookie(key="session_id", value=session_id)
+        
         # Save the uploaded file
         file_path = os.path.join(UPLOAD_DIR, file.filename)
         with open(file_path, "wb") as buffer:
@@ -38,6 +85,24 @@ async def upload_document(file: UploadFile = File(...)):
         # Process the document
         try:
             document_id = document_service.process_document(file_path)
+            
+            # Update session documents
+            session_file = get_session_file(session_id)
+            if os.path.exists(session_file):
+                with open(session_file, "r") as f:
+                    documents = json.load(f)
+            else:
+                documents = []
+            
+            documents.append({
+                "id": document_id,
+                "name": file.filename,
+                "upload_date": str(datetime.now())
+            })
+            
+            with open(session_file, "w") as f:
+                json.dump(documents, f)
+            
             return {"document_id": document_id}
         except Exception as e:
             print(f"Error processing document: {str(e)}")
@@ -48,10 +113,41 @@ async def upload_document(file: UploadFile = File(...)):
     finally:
         file.file.close()
 
-@app.post("/query")
-async def query_document(document_id: str, question: str, language: str = "en"):
+@app.delete("/documents/{document_id}")
+async def delete_document(
+    document_id: str,
+    session_id: Optional[str] = Cookie(None)
+):
     try:
-        answer = rag_service.query_document(document_id, question, language)
+        if not session_id:
+            raise HTTPException(status_code=400, detail="No session found")
+        
+        session_file = get_session_file(session_id)
+        if not os.path.exists(session_file):
+            raise HTTPException(status_code=404, detail="Session not found")
+        
+        # Load and update session documents
+        with open(session_file, "r") as f:
+            documents = json.load(f)
+        
+        # Find and remove the document
+        updated_documents = [doc for doc in documents if doc["id"] != document_id]
+        
+        # Save updated documents
+        with open(session_file, "w") as f:
+            json.dump(updated_documents, f)
+        
+        # Delete the document from the vector store
+        document_service.delete_document(document_id)
+        
+        return {"message": "Document deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/query")
+async def query_document(request: QueryRequest):
+    try:
+        answer = rag_service.query_document(request.document_id, request.question, request.language)
         return {"answer": answer}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
