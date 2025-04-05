@@ -387,35 +387,11 @@ class ConferenceService:
         try:
             conferences = []
             for conference_id, conference_data in self.conferences.items():
-                # Calculate duration if we have transcripts
-                duration = "Unknown"
-                if conference_data["transcripts"]:
-                    try:
-                        # Get the first and last transcript timestamps
-                        first_time = datetime.fromisoformat(conference_data["transcripts"][0]["timestamp"])
-                        
-                        # If there's only one transcript, use the start_time as the first time
-                        if len(conference_data["transcripts"]) == 1:
-                            first_time = datetime.fromisoformat(conference_data["start_time"])
-                            
-                        last_time = datetime.fromisoformat(conference_data["transcripts"][-1]["timestamp"])
-                        duration_seconds = (last_time - first_time).total_seconds()
-                        
-                        # Format duration as HH:MM:SS
-                        hours = int(duration_seconds // 3600)
-                        minutes = int((duration_seconds % 3600) // 60)
-                        seconds = int(duration_seconds % 60)
-                        duration = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
-                    except Exception as e:
-                        logger.warning(f"Error calculating duration: {str(e)}")
-                        duration = "Unknown"
-                
                 conferences.append({
                     "id": conference_id,
                     "start_time": conference_data["start_time"],
                     "parent_language": conference_data["parent_language"],
-                    "transcript_count": len(conference_data["transcripts"]),
-                    "duration": duration
+                    "transcript_count": len(conference_data["transcripts"])
                 })
             return conferences
         except Exception as e:

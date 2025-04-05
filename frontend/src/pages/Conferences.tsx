@@ -31,7 +31,6 @@ import TranslateIcon from '@mui/icons-material/Translate';
 interface Conference {
   id: string;
   date: string;
-  duration: string;
   summary: string;
   language: string;
   transcript?: string;
@@ -390,9 +389,6 @@ const Conferences: React.FC = () => {
                     <Box sx={{ flexGrow: 1 }}>
                       <Typography variant="h6">
                         {new Date(conference.date).toLocaleDateString()}
-                      </Typography>
-                      <Typography variant="body2" color="text.secondary">
-                        {t('duration')}: {conference.duration}
                       </Typography>
                     </Box>
                   </Box>
