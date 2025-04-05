@@ -3,7 +3,6 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
   AppBar,
   Toolbar,
-  Typography,
   Button,
   Box,
   IconButton,
@@ -76,21 +75,12 @@ const Navbar: React.FC = () => {
   return (
     <AppBar position="sticky" color="default" elevation={1}>
       <Toolbar>
-        <Typography
-          variant="h6"
-          component="div"
-          sx={{ flexGrow: 1, cursor: 'pointer' }}
-          onClick={() => navigate('/')}
-        >
-          Parent Engagement
-        </Typography>
-
         {isMobile ? (
           <>
             <IconButton
               color="inherit"
               aria-label="open drawer"
-              edge="end"
+              edge="start"
               onClick={toggleDrawer(true)}
             >
               <MenuIcon />
