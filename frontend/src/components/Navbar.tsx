@@ -34,7 +34,7 @@ const Navbar: React.FC = () => {
     { path: '/', label: t('home'), icon: <HomeIcon /> },
     { path: '/documents', label: t('documents'), icon: <DescriptionIcon /> },
     { path: '/conferences', label: t('conferences'), icon: <EventIcon /> },
-    { path: '/chat', label: t('chat'), icon: <ChatBubbleOutlineIcon /> },
+    { path: '/chat', label: t('aiAssistant'), icon: <ChatBubbleOutlineIcon /> },
   ];
 
   const toggleDrawer = (open: boolean) => (event: React.KeyboardEvent | React.MouseEvent) => {

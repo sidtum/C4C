@@ -40,23 +40,22 @@ interface Conference {
 
 const Conferences: React.FC = () => {
   const { t } = useTranslation();
+  const [conferences, setConferences] = useState<Conference[]>([]);
   const [isRecording, setIsRecording] = useState(false);
   const [selectedLanguage, setSelectedLanguage] = useState('en');
-  const [conferences, setConferences] = useState<Conference[]>([]);
+  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedConference, setSelectedConference] = useState<Conference | null>(null);
-  const [mediaRecorder, setMediaRecorder] = useState<MediaRecorder | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [recordingStartTime, setRecordingStartTime] = useState<Date | null>(null);
-  const [audioChunks, setAudioChunks] = useState<Blob[]>([]);
   const [currentlyPlaying, setCurrentlyPlaying] = useState<string | null>(null);
   const [translating, setTranslating] = useState<string | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  
+
   // Use refs to maintain values across async operations
   const currentConferenceIdRef = useRef<string | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     // Fetch conferences from backend
@@ -76,13 +75,9 @@ const Conferences: React.FC = () => {
 
   const startRecording = async () => {
     try {
-      // Reset any previous errors
       setError(null);
       
-      // First, check microphone permissions
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      
-      // If we get here, we have permission, so start the conference
+      // First, start the conference
       const startResponse = await fetch('http://localhost:8000/conference/start', {
         method: 'POST',
         headers: {
@@ -95,53 +90,56 @@ const Conferences: React.FC = () => {
         const errorData = await startResponse.json();
         throw new Error(errorData.detail || 'Failed to start conference');
       }
-      
+
       const startData = await startResponse.json();
-      console.log("Started conference with ID:", startData.conference_id);
       currentConferenceIdRef.current = startData.conference_id;
 
-      // Create the MediaRecorder with the already obtained stream
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm') 
-        ? 'audio/webm' 
-        : MediaRecorder.isTypeSupported('audio/mp4') 
-          ? 'audio/mp4' 
-          : 'audio/ogg';
+      // Then get microphone permissions
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       
-      console.log('Using MIME type for recording:', mimeType);
+      // Check for supported MIME types
+      const mimeTypes = [
+        'audio/webm',
+        'audio/webm;codecs=opus',
+        'audio/ogg;codecs=opus',
+        'audio/mp4',
+        'audio/mpeg'
+      ];
+      
+      const supportedMimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type));
+      if (!supportedMimeType) {
+        throw new Error('No supported audio MIME type found');
+      }
+      
+      console.log('Using MIME type:', supportedMimeType);
       
       const recorder = new MediaRecorder(stream, {
-        mimeType: mimeType
+        mimeType: supportedMimeType
       });
       
       // Clear previous chunks
       audioChunksRef.current = [];
-      setAudioChunks([]);
       
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           audioChunksRef.current = [...audioChunksRef.current, e.data];
-          setAudioChunks(prev => [...prev, e.data]);
         }
       };
 
       recorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: supportedMimeType });
         try {
           const conferenceId = currentConferenceIdRef.current;
           if (!conferenceId) {
             throw new Error("No conference ID available");
           }
           
-          // Create a blob from the recorded chunks
-          const audioBlob = new Blob(audioChunksRef.current, { type: mimeType });
-          
           // Create a FormData object
           const formData = new FormData();
-          formData.append('audio', audioBlob, `recording.${mimeType.split('/')[1]}`);
+          formData.append('audio', audioBlob, `recording.${supportedMimeType.split('/')[1]}`);
           formData.append('conference_id', conferenceId);
 
           setLoading(true);
-          
-          console.log("Sending audio to backend with conference ID:", conferenceId);
           
           // Send the audio to the backend
           const response = await fetch('http://localhost:8000/conference/record', {
@@ -155,7 +153,6 @@ const Conferences: React.FC = () => {
           }
           
           const data = await response.json();
-          console.log("Received response from backend:", data);
           
           // Calculate duration
           const duration = recordingStartTime 
@@ -182,23 +179,22 @@ const Conferences: React.FC = () => {
         setRecordingStartTime(null);
       };
 
-      // Start recording with 1-second intervals
-      recorder.start(1000);
       setMediaRecorder(recorder);
+      recorder.start();
       setIsRecording(true);
       setRecordingStartTime(new Date());
-    } catch (error) {
-      console.error('Error accessing microphone:', error);
-      if (error instanceof Error) {
-        if (error.name === 'NotAllowedError') {
+    } catch (err) {
+      console.error('Error starting recording:', err);
+      if (err instanceof Error) {
+        if (err.name === 'NotAllowedError') {
           setError('Microphone access was denied. Please allow microphone access in your browser settings and try again.');
-        } else if (error.name === 'NotFoundError') {
+        } else if (err.name === 'NotFoundError') {
           setError('No microphone found. Please ensure you have a working microphone connected.');
         } else {
-          setError(`Failed to access microphone: ${error.message}`);
+          setError(err.message || 'Failed to start recording. Please check your microphone permissions.');
         }
       } else {
-        setError('Failed to access microphone. Please check your permissions.');
+        setError('Failed to start recording. Please check your microphone permissions.');
       }
     }
   };

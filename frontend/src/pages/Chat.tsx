@@ -15,11 +15,10 @@ import {
   InputLabel,
   Tabs,
   Tab,
+  Alert,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import SendIcon from '@mui/icons-material/Send';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
-import LanguageIcon from '@mui/icons-material/Language';
 import DescriptionIcon from '@mui/icons-material/Description';
 import MeetingRoomIcon from '@mui/icons-material/MeetingRoom';
 
@@ -55,6 +54,11 @@ const Chat: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState(0);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Scroll to top when component mounts
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
 
   const fetchData = async () => {
     try {
@@ -172,35 +176,11 @@ const Chat: React.FC = () => {
     setMessages([]);
   };
 
-  const handleDeleteConference = async (conferenceId: string) => {
-    try {
-      const response = await fetch(`http://localhost:8000/conferences/${conferenceId}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete conference');
-      }
-
-      // Update conferences list
-      setConferences(conferences.filter(conf => conf.id !== conferenceId));
-      
-      // If the deleted conference was selected, clear the selection
-      if (selectedConference === conferenceId) {
-        setSelectedConference('');
-        setMessages([]);
-      }
-    } catch (error) {
-      console.error('Error deleting conference:', error);
-    }
-  };
-
   return (
     <Container maxWidth="md">
       <Box sx={{ my: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom align="center">
-          {t('chat.title')}
+          {t('aiAssistant')}
         </Typography>
 
         <Tabs
@@ -271,26 +251,7 @@ const Chat: React.FC = () => {
                         ))
                       : conferences.map((conf) => (
                           <MenuItem key={conf.id} value={conf.id}>
-                            <Box sx={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>
-                              <Box>
-                                <Typography>
-                                  {conf.start_time ? new Date(conf.start_time).toLocaleString() : 'Invalid Date'}
-                                </Typography>
-                                <Typography variant="caption" color="text.secondary">
-                                  Duration: {conf.duration}
-                                </Typography>
-                              </Box>
-                              <Button
-                                size="small"
-                                color="error"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteConference(conf.id);
-                                }}
-                              >
-                                Delete
-                              </Button>
-                            </Box>
+                            {new Date(conf.start_time).toLocaleString()} - {conf.parent_language}
                           </MenuItem>
                         ))}
                   </Select>
@@ -300,57 +261,89 @@ const Chat: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card sx={{ mb: 3, height: '400px', overflow: 'auto' }}>
+        {!selectedDocument && activeTab === 0 && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            {t('chat.noDocumentSelected')}
+          </Alert>
+        )}
+
+        {!selectedConference && activeTab === 1 && (
+          <Alert severity="info" sx={{ mb: 3 }}>
+            {t('chat.noConferenceSelected')}
+          </Alert>
+        )}
+
+        <Card sx={{ mb: 3 }}>
           <CardContent>
-            {messages.map((message) => (
-              <Box
-                key={message.id}
-                sx={{
-                  display: 'flex',
-                  justifyContent: message.sender === 'user' ? 'flex-end' : 'flex-start',
-                  mb: 2,
-                }}
-              >
+            <Box sx={{ height: '400px', overflowY: 'auto', mb: 2 }}>
+              {messages.length === 0 ? (
                 <Box
                   sx={{
-                    maxWidth: '70%',
-                    p: 2,
-                    borderRadius: 2,
-                    bgcolor: message.sender === 'user' ? 'primary.main' : 'grey.200',
-                    color: message.sender === 'user' ? 'white' : 'text.primary',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    height: '100%',
+                    color: 'text.secondary',
                   }}
                 >
-                  <Typography>{message.text}</Typography>
-                  <Typography variant="caption" sx={{ display: 'block', mt: 1 }}>
-                    {new Date(message.timestamp).toLocaleTimeString()}
+                  <ChatBubbleOutlineIcon sx={{ fontSize: 48, mb: 2 }} />
+                  <Typography variant="body1" align="center">
+                    {t('startChatting')}
                   </Typography>
                 </Box>
-              </Box>
-            ))}
-            <div ref={messagesEndRef} />
+              ) : (
+                messages.map((message) => (
+                  <Box
+                    key={message.id}
+                    sx={{
+                      display: 'flex',
+                      justifyContent: message.sender === 'user' ? 'flex-end' : 'flex-start',
+                      mb: 2,
+                    }}
+                  >
+                    <Card
+                      sx={{
+                        maxWidth: '70%',
+                        backgroundColor: message.sender === 'user' ? 'primary.main' : 'background.paper',
+                        color: message.sender === 'user' ? 'primary.contrastText' : 'text.primary',
+                      }}
+                    >
+                      <CardContent>
+                        <Typography variant="body1">{message.text}</Typography>
+                        <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                          {new Date(message.timestamp).toLocaleTimeString()}
+                        </Typography>
+                      </CardContent>
+                    </Card>
+                  </Box>
+                ))
+              )}
+              <div ref={messagesEndRef} />
+            </Box>
+
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <TextField
+                fullWidth
+                multiline
+                maxRows={4}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyPress={handleKeyPress}
+                placeholder={t('chat.placeholder')}
+                disabled={loading || (activeTab === 0 && !selectedDocument) || (activeTab === 1 && !selectedConference)}
+              />
+              <Button
+                variant="contained"
+                onClick={handleSend}
+                disabled={loading || !input.trim() || (activeTab === 0 && !selectedDocument) || (activeTab === 1 && !selectedConference)}
+                sx={{ minWidth: '100px' }}
+              >
+                {loading ? <CircularProgress size={24} /> : t('send')}
+              </Button>
+            </Box>
           </CardContent>
         </Card>
-
-        <Box sx={{ display: 'flex', gap: 2 }}>
-          <TextField
-            fullWidth
-            multiline
-            rows={2}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder={t('chat.placeholder')}
-            disabled={loading || (!selectedDocument && !selectedConference)}
-          />
-          <Button
-            variant="contained"
-            onClick={handleSend}
-            disabled={loading || !input.trim() || (!selectedDocument && !selectedConference)}
-            sx={{ minWidth: '100px' }}
-          >
-            {loading ? <CircularProgress size={24} /> : <SendIcon />}
-          </Button>
-        </Box>
       </Box>
     </Container>
   );

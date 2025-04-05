@@ -30,8 +30,8 @@ const Home: React.FC = () => {
     },
     {
       icon: <ChatBubbleOutlineIcon sx={{ fontSize: 48, color: 'primary.main' }} />,
-      title: t('chat'),
-      description: t('chatDescription'),
+      title: t('aiAssistant'),
+      description: t('aiAssistantDescription'),
       path: '/chat',
     },
     {

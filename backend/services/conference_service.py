@@ -29,8 +29,9 @@ class ConferenceService:
         # Initialize vector store for conference transcripts
         self.embeddings = OpenAIEmbeddings()
         self.vector_store = Chroma(
-            persist_directory="chroma_db/conferences",
-            embedding_function=self.embeddings
+            persist_directory=os.path.join("chroma_db", "conferences"),
+            embedding_function=self.embeddings,
+            collection_name="conference_transcripts"
         )
         
         # Load conferences from file
@@ -169,15 +170,16 @@ class ConferenceService:
             
             # Add metadata to each chunk
             metadatas = [{
-                "conference_id": conference_id,
-                "chunk_index": i,
+                "conference_id": str(conference_id),  # Ensure conference_id is string
+                "chunk_index": str(i),  # Ensure chunk_index is string
                 "timestamp": datetime.now().isoformat()
             } for i in range(len(chunks))]
             
             # Add to vector store
             self.vector_store.add_texts(
                 texts=chunks,
-                metadatas=metadatas
+                metadatas=metadatas,
+                ids=[f"{conference_id}_{i}" for i in range(len(chunks))]  # Add unique IDs
             )
             
             # Save the vector store
@@ -198,18 +200,27 @@ class ConferenceService:
             if not conference["transcripts"]:
                 return "No transcripts available for this conference."
             
+            # Combine all transcripts for context
+            full_transcript = " ".join(t["text"] for t in conference["transcripts"])
+            
             # Search vector store with metadata filter
             docs = self.vector_store.similarity_search(
                 question,
-                k=3,
-                filter={"conference_id": conference_id}
+                k=5,  # Increased from 3 to 5 for better context
+                filter={"conference_id": str(conference_id)}  # Ensure conference_id is string
             )
             
+            # If no results from vector store, use the full transcript
             if not docs:
-                return "I cannot find that information in the conference transcript."
+                context = full_transcript
+                logger.info("Using full transcript as no relevant chunks found")
+            else:
+                # Combine relevant chunks
+                context = "\n".join([doc.page_content for doc in docs])
+                logger.info(f"Found {len(docs)} relevant chunks from vector store")
             
-            # Combine relevant chunks
-            context = "\n".join([doc.page_content for doc in docs])
+            # Log the context being sent to the LLM
+            logger.info(f"Context length: {len(context)} characters")
             
             # Translate question if needed
             if language != "en":
@@ -226,7 +237,7 @@ class ConferenceService:
             Question: {question}
 
             Please provide a clear and concise answer based on the transcript. If the information is not in the transcript, 
-            say so rather than making up information.
+            say so rather than making up information. Try to be as helpful as possible with the information available.
             """
             
             # Use OpenAI to generate the answer
