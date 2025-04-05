@@ -88,7 +88,12 @@ const Navbar: React.FC = () => {
             {renderMobileMenu()}
           </>
         ) : (
-          <Box sx={{ display: 'flex', gap: 2 }}>
+          <Box sx={{ 
+            display: 'flex', 
+            gap: 2,
+            justifyContent: 'center',
+            width: '100%'
+          }}>
             {menuItems.map((item) => (
               <Button
                 key={item.path}
