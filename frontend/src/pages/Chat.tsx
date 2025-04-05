@@ -16,6 +16,7 @@ import {
   Tabs,
   Tab,
   Alert,
+  keyframes,
 } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import ChatBubbleOutlineIcon from '@mui/icons-material/ChatBubbleOutline';
@@ -41,6 +42,68 @@ interface Conference {
   transcript_count: number;
   duration: string;
 }
+
+const LoadingBubble: React.FC = () => {
+  const dotAnimation = keyframes`
+    0%, 80%, 100% { 
+      transform: scale(0);
+    }
+    40% { 
+      transform: scale(1.0);
+    }
+  `;
+
+  return (
+    <Box
+      sx={{
+        display: 'flex',
+        justifyContent: 'flex-start',
+        mb: 2,
+      }}
+    >
+      <Card
+        sx={{
+          maxWidth: '70%',
+          backgroundColor: 'background.paper',
+        }}
+      >
+        <CardContent>
+          <Box sx={{ display: 'flex', gap: 0.5 }}>
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                backgroundColor: 'primary.main',
+                animation: `${dotAnimation} 1.4s infinite ease-in-out`,
+              }}
+            />
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                backgroundColor: 'primary.main',
+                animation: `${dotAnimation} 1.4s infinite ease-in-out`,
+                animationDelay: '0.2s',
+              }}
+            />
+            <Box
+              sx={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                backgroundColor: 'primary.main',
+                animation: `${dotAnimation} 1.4s infinite ease-in-out`,
+                animationDelay: '0.4s',
+              }}
+            />
+          </Box>
+        </CardContent>
+      </Card>
+    </Box>
+  );
+};
 
 const Chat: React.FC = () => {
   const { t } = useTranslation();
@@ -295,31 +358,34 @@ const Chat: React.FC = () => {
                   </Typography>
                 </Box>
               ) : (
-                messages.map((message) => (
-                  <Box
-                    key={message.id}
-                    sx={{
-                      display: 'flex',
-                      justifyContent: message.sender === 'user' ? 'flex-end' : 'flex-start',
-                      mb: 2,
-                    }}
-                  >
-                    <Card
+                <>
+                  {messages.map((message: Message) => (
+                    <Box
+                      key={message.id}
                       sx={{
-                        maxWidth: '70%',
-                        backgroundColor: message.sender === 'user' ? 'primary.main' : 'background.paper',
-                        color: message.sender === 'user' ? 'primary.contrastText' : 'text.primary',
+                        display: 'flex',
+                        justifyContent: message.sender === 'user' ? 'flex-end' : 'flex-start',
+                        mb: 2,
                       }}
                     >
-                      <CardContent>
-                        <Typography variant="body1">{message.text}</Typography>
-                        <Typography variant="caption" sx={{ opacity: 0.7 }}>
-                          {new Date(message.timestamp).toLocaleTimeString()}
-                        </Typography>
-                      </CardContent>
-                    </Card>
-                  </Box>
-                ))
+                      <Card
+                        sx={{
+                          maxWidth: '70%',
+                          backgroundColor: message.sender === 'user' ? 'primary.main' : 'background.paper',
+                          color: message.sender === 'user' ? 'primary.contrastText' : 'text.primary',
+                        }}
+                      >
+                        <CardContent sx={{ pt: 1.5, pb: 1, px: 2, display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                          <Typography variant="body1">{message.text}</Typography>
+                          <Typography variant="caption" sx={{ opacity: 0.7 }}>
+                            {new Date(message.timestamp).toLocaleTimeString()}
+                          </Typography>
+                        </CardContent>
+                      </Card>
+                    </Box>
+                  ))}
+                  {loading && <LoadingBubble />}
+                </>
               )}
               <div ref={messagesEndRef} />
             </Box>
