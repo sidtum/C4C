@@ -2,6 +2,8 @@
 
 A comprehensive solution designed to bridge the language gap between schools and non-English speaking parents, enabling better understanding of student progress and parent-teacher communication.
 
+Check out our demo: https://youtu.be/KTO2y-lEk9I
+
 ## 🌟 Features
 
 ### 1. Student Information Understanding
